@@ -35,7 +35,7 @@ class Installer:
 
   def __init__(self, buildout):
 
-    self.buildout = buildout['buildout']
+    self.buildout = buildout
 
     self.verbose = tools.verbose(self.buildout)
 
@@ -44,10 +44,10 @@ class Installer:
     self.envwrapper = EnvironmentWrapper(logger,
         tools.debug(self.buildout),
         self.prefixes,
-        buildout.get('environ', {}),
+        buildout['buildout'].get('environ', {}),
         )
 
-    self.find_links = buildout.get('find_links', '')
+    self.find_links = buildout['buildout'].get('find_links', '')
 
   def __call__(self, spec, ws, dest, dist):
     """We will replace the default easy_install call by this one"""
@@ -56,7 +56,7 @@ class Installer:
     self.envwrapper.set()
 
     # satisfy all package requirements before installing the package itself
-    tools.satisfy_requirements(self.buildout, spec, ws)
+    system_eggs = tools.satisfy_requirements(self.buildout, spec, ws)
 
     tmp = tempfile.mkdtemp(dir=dest)
 
@@ -69,7 +69,7 @@ class Installer:
         else:
             args.append('-q')
 
-        links = self.buildout.get('find-links', '')
+        links = self.buildout['buildout'].get('find-links', '')
         if links: args.extend(['-f', links])
 
         args.append(spec)
@@ -138,7 +138,7 @@ class Installer:
 
             result.append(d)
 
-        return result
+        return system_eggs + tuple(result)
 
     finally:
         shutil.rmtree(tmp)
@@ -148,7 +148,7 @@ class Extension:
 
   def __init__(self, buildout):
 
-      self.buildout = buildout['buildout']
+      self.buildout = buildout
 
       # shall we be verbose?
       self.verbose = tools.verbose(self.buildout)
@@ -167,7 +167,7 @@ class Extension:
           directory = os.path.dirname(setup)
 
       working_set = tools.working_set(self.buildout)
-      tools.satisfy_requirements(self.buildout, directory, working_set)
+      system_eggs = tools.satisfy_requirements(self.buildout, directory, working_set)
 
       self.installer.envwrapper.set()
       undo = []
@@ -211,7 +211,7 @@ class Extension:
 
           zc.buildout.easy_install.call_subprocess(args)
 
-          return zc.buildout.easy_install._copyeggs(tmp3, dest, '.egg-link', undo)
+          return system_eggs + tuple(zc.buildout.easy_install._copyeggs(tmp3, dest, '.egg-link', undo))
 
       finally:
           undo.reverse()
