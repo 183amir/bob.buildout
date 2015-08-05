@@ -6,206 +6,19 @@
 """Builds custom interpreters with the right paths for external Bob
 """
 
-import os
-import six
 import logging
-import pkg_resources
-import zc.buildout
+import copy
+
+import pip
+import oset
+import distutils
+import zc.recipe.egg
+import syseggrecipe.recipe
+
 from . import tools
-from .script import Recipe as Script
-from .python import Recipe as PythonInterpreter
-from .gdbpy import Recipe as GdbPythonInterpreter
 from .envwrapper import EnvironmentWrapper
+from .python import Recipe as PythonRecipe
 
-def version_is_lessthan(name, version):
-  """Checks if the version of a package is at least..."""
-
-  if not is_available(name): return False
-  else:
-    from distutils.version import LooseVersion
-    return LooseVersion(pkg_resources.require(name)[0].version) < version
-
-class UserScripts(Script):
-  """Installs all user scripts from the eggs"""
-
-  def __init__(self, buildout, name, options):
-
-    self.name = name
-    self.buildout = buildout
-    self.options = options
-
-    if 'interpreter' in options: del self.options['interpreter']
-    if 'scripts' in options: del self.options['scripts']
-    super(UserScripts, self).__init__(self.buildout, self.name, self.options)
-
-  def install(self):
-
-    return super(UserScripts, self).install()
-
-  update = install
-
-class IPythonInterpreter(Script):
-  """Installs all user scripts from the eggs"""
-
-  def __init__(self, buildout, name, options):
-
-    self.name = name
-    self.buildout = buildout
-    self.options = options
-
-    # adds ipython interpreter into the mix
-    interpreter = self.options.setdefault('interpreter', 'python')
-    del self.options['interpreter']
-    self.options['entry-points'] = 'i%s=IPython.frontend.terminal.ipapp:launch_new_instance' % interpreter
-    self.options['scripts'] = 'i%s' % interpreter
-    self.options['dependent-scripts'] = 'false'
-
-    eggs = tools.eggs(self.buildout['buildout'], self.options, self.name)
-    self.options['eggs'] = tools.add_eggs(eggs, ['ipython'])
-
-    # initializes base class
-    super(IPythonInterpreter, self).__init__(self.buildout,
-        self.name, self.options)
-
-  def install(self):
-
-    return super(IPythonInterpreter, self).install()
-
-  update = install
-
-class PyLint(Script):
-  """Installs PyLint infrastructure"""
-
-  def __init__(self, buildout, name, options):
-
-    self.logger = logging.getLogger(name)
-    self.name = name
-    self.buildout = buildout
-    self.options = options
-
-    if 'interpreter' in options: del self.options['interpreter']
-    if 'pylint-flags' in options:
-      if version_is_lessthan('pylint', '1.0'):
-        # use 'options' instead of 'self.options' to force use
-        flags = tools.parse_list(options['pylint-flags'])
-        init_code = ['sys.argv.append(%r)' % k for k in flags]
-        self.options['initialization'] = '\n'.join(init_code)
-      else:
-        self.logger.warn('the option pylint-flags for this recipe is only available for older versions of pylint < 1.0')
-    self.options['entry-points'] = 'pylint=pylint.lint:Run'
-    self.options['arguments'] = 'sys.argv[1:]'
-    self.options['scripts'] = 'pylint'
-    self.options['dependent-scripts'] = 'false'
-
-    eggs = tools.eggs(self.buildout['buildout'], self.options, self.name)
-    self.options['eggs'] = tools.add_eggs(eggs, ['pylint'])
-
-    # initializes base class
-    super(PyLint, self).__init__(self.buildout, self.name, self.options)
-
-  def install(self):
-
-    return super(PyLint, self).install()
-
-  update = install
-
-class NoseTests(Script):
-  """Installs Nose infrastructure"""
-
-  def __init__(self, buildout, name, options):
-
-    self.name = name
-    self.buildout = buildout
-    self.options = options
-
-    if 'interpreter' in options: del options['interpreter']
-    if 'nose-flags' in options:
-      # use 'options' instead of 'options' to force use
-      flags = tools.parse_list(options['nose-flags'])
-      init_code = ['sys.argv.append(%r)' % k for k in flags]
-      options['initialization'] = '\n'.join(init_code)
-    self.options['entry-points'] = 'nosetests=nose:run_exit'
-    self.options['scripts'] = 'nosetests'
-    self.options['dependent-scripts'] = 'false'
-
-    eggs = tools.eggs(self.buildout['buildout'], self.options, self.name)
-    self.options['eggs'] = tools.add_eggs(eggs, ['nose'])
-
-    # initializes base class
-    super(NoseTests, self).__init__(self.buildout, self.name, self.options)
-
-  def install(self):
-
-    return super(NoseTests, self).install()
-
-  update = install
-
-class Coverage(Script):
-  """Installs Coverage infrastructure"""
-
-  def __init__(self, buildout, name, options):
-
-    self.name = name
-    self.buildout = buildout
-    self.options = options
-
-    if 'interpreter' in options: del options['interpreter']
-    if 'coverage-flags' in options:
-      # use 'options' instead of 'options' to force use
-      flags = tools.parse_list(options['coverage-flags'])
-      init_code = ['sys.argv.append(%r)' % k for k in flags]
-      self.options['initialization'] = '\n'.join(init_code)
-    self.options['entry-points'] = 'coverage=coverage:main'
-    self.options['scripts'] = 'coverage'
-    self.options['dependent-scripts'] = 'false'
-
-    eggs = tools.eggs(self.buildout['buildout'], self.options, self.name)
-    self.options['eggs'] = tools.add_eggs(eggs, ['coverage'])
-
-    # initializes base class
-    super(Coverage, self).__init__(self.buildout, self.name, self.options)
-
-  def install(self):
-
-    return super(Coverage, self).install()
-
-  update = install
-
-class Sphinx(Script):
-  """Installs the Sphinx documentation generation infrastructure"""
-
-  def __init__(self, buildout, name, options):
-
-    self.name = name
-    self.buildout = buildout
-    self.options = options
-
-    if 'interpreter' in options: del self.options['interpreter']
-    self.options['scripts'] = '\n'.join([
-      'sphinx-build',
-      'sphinx-apidoc',
-      'sphinx-autogen',
-      'sphinx-quickstart',
-      ])
-    self.options['entry-points'] = '\n'.join([
-      'sphinx-build=sphinx:main',
-      'sphinx-apidoc=sphinx.apidoc:main',
-      'sphinx-autogen=sphinx.ext.autosummary.generate:main',
-      'sphinx-quickstart=sphinx.quickstart:main',
-      ])
-    self.options['dependent-scripts'] = 'false'
-
-    eggs = tools.eggs(self.buildout['buildout'], self.options, self.name)
-    self.options['eggs'] = tools.add_eggs(eggs, ['sphinx'])
-
-    # initializes base class
-    super(Sphinx, self).__init__(self.buildout, self.name, self.options)
-
-  def install(self):
-
-    return super(Sphinx, self).install()
-
-  update = install
 
 class Recipe(object):
   """Just creates a given script with the "correct" paths
@@ -213,35 +26,110 @@ class Recipe(object):
 
   def __init__(self, buildout, name, options):
 
+    self.buildout = buildout
+    self.name = name
+    self.options = options.copy()
+
     self.logger = logging.getLogger(name.capitalize())
+
+    # Are we in debug mode?
+    self.debug = tools.debug(buildout['buildout'])
+
+    # Gets a personalized eggs list or the one from buildout
+    self.eggs = oset.oset(tools.eggs(buildout['buildout'], options, name))
 
     # Gets a personalized prefixes list or the one from buildout
     prefixes = tools.get_prefixes(buildout['buildout'])
 
-    # Builds an environment wrapper, in case dependent packages need to be
-    # compiled
-    self.envwrapper = EnvironmentWrapper(self.logger,
-        tools.debug(buildout['buildout']), prefixes)
+    # Builds an environment wrapper, if dependent packages need to be compiled
+    self.envwrapper = EnvironmentWrapper(self.logger, self.debug, prefixes)
 
-    # Touch the options
-    self.dependent_scripts = options.get('dependent-scripts')
+    # Does not install the python interpreter from zc.egg.recipe (use ours)
+    if 'interpreter' in self.options: del self.options['interpreter']
 
-    self.python = PythonInterpreter(buildout, 'Python', options.copy())
-    #self.ipython = IPythonInterpreter(buildout, 'IPython', options.copy())
-    self.gdbpy = GdbPythonInterpreter(buildout, 'GdbPython', options.copy())
-    self.scripts = UserScripts(buildout, 'Scripts', options.copy())
-    self.nose = NoseTests(buildout, 'Nose', options.copy())
-    self.coverage = Coverage(buildout, 'Coverage', options.copy())
-    self.sphinx = Sphinx(buildout, 'Sphinx', options.copy())
+    # Does not install dependent scripts by default
+    self.options.setdefault('dependent-scripts', 'false')
+
 
   def install(self):
+
+    # gets a list (from pip), of what is currently available on the system
+    # and are not in edition mode
+    system_eggs = oset.oset(pip.get_installed_distributions(
+        include_editables=False))
+
+    # excludes packages which are currently installed on this buildout
+    bdir = self.buildout['buildout']['directory']
+    local_eggs = oset.oset([k for k in system_eggs if \
+            k.location.startswith(bdir)])
+    system_eggs -= local_eggs
+
+    # installs system eggs using syseggrecipe
+    options = {
+            'eggs': '\n'.join([k.key for k in system_eggs]),
+            'force-sysegg': 'true',
+            }
+    name = self.name + '-system-eggs'
+    recipe = syseggrecipe.recipe.Recipe(self.buildout, name, options)
+    retval = recipe.install()
+
+    # this will effectively build our eggs for the current buildout
     with self.envwrapper as ew:
-      return \
-          self.python.install_on_wrapped_env() + \
-          self.gdbpy.install_on_wrapped_env() + \
-          self.scripts.install_on_wrapped_env() + \
-          self.nose.install_on_wrapped_env() + \
-          self.coverage.install_on_wrapped_env() + \
-          self.sphinx.install_on_wrapped_env()
+
+      name = self.name + '-user-scripts'
+      options = self.options.copy()
+      eggs = copy.deepcopy(self.eggs)
+      # boost environment with more executables we always use
+      eggs.add('sphinx')
+      eggs.add('nose')
+      eggs.add('coverage')
+      options['eggs'] = '\n'.join(eggs)
+      egg_recipe = zc.recipe.egg.Scripts(self.buildout, name, options)
+      retval += tuple(egg_recipe.install())
+
+    # installs python interpreter
+    options = self.options.copy()
+    options['eggs'] = '\n'.join(self.eggs)
+    name = self.name + '-python'
+    python_recipe = PythonRecipe(self.buildout, name, options)
+    retval += tuple(python_recipe.install())
+
+    # installs a gdb-powered python interpreter
+    if self.debug:
+      from .gdbpy import Recipe as GdbPythonRecipe
+      options = self.options.copy()
+      options['eggs'] = '\n'.join(self.eggs)
+      name = self.name + '-gdb-python'
+      gdbpy_recipe = GdbPythonRecipe(self.buildout, name, options)
+      retval += tuple(gdbpy_recipe.install())
+
+    # if ipython is available as a system package, install an interpreter
+    all_eggs = pip.get_installed_distributions()
+    ipython_egg = [k for k in all_eggs if k.key == 'ipython']
+    if ipython_egg:
+
+      options = self.options.copy()
+      eggs = copy.deepcopy(self.eggs)
+      eggs.add('ipython')
+      options['eggs'] = '\n'.join(eggs)
+      if 'interpreter' in options:
+        options['scripts'] = 'i' + options['interpreter']
+        del options['interpreter']
+      else:
+        options['scripts'] = 'ipython'
+      options['dependent-scripts'] = 'false'
+
+      ipython_version = distutils.version.LooseVersion(ipython_egg[0].version)
+      if ipython_version > distutils.version.LooseVersion('3.0.0a0'):
+        ipython_app = 'IPython.terminal.ipapp:launch_new_instance'
+      else: #version 2 or less
+        ipython_app = 'IPython.frontend.terminal.ipapp:launch_new_instance'
+
+      options['entry-points'] = '%s=%s' % (options['scripts'], ipython_app)
+      name = self.name + '-ipython'
+      ipython_recipe = zc.recipe.egg.Scripts(self.buildout, name, options)
+      retval += tuple(ipython_recipe.install())
+
+    return retval
 
   update = install

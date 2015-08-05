@@ -12,9 +12,9 @@ setup(
     name='bob.buildout',
     version=version,
     description="zc.buildout recipes to perform a variety of tasks required by Bob satellite packages",
-    keywords=['buildout', 'sphinx', 'nose', 'recipe', 'eggs', 'bob'],
+    keywords=['buildout', 'recipe', 'eggs', 'bob'],
     url='http://github.com/bioidiap/bob.buildout',
-    license='GPLv3',
+    license='BSD',
     author='Andre Anjos',
     author_email='andre.anjos@idiap.ch',
 
@@ -31,16 +31,7 @@ setup(
 
     entry_points = {
       'zc.buildout': [
-        'develop = bob.buildout.develop:Recipe',
         'scripts = bob.buildout.scripts:Recipe',
-        'python = bob.buildout.scripts:PythonInterpreter',
-        'gdb-python = bob.buildout.scripts:GdbPythonInterpreter',
-        'ipython = bob.buildout.scripts:IPythonInterpreter',
-        'pylint = bob.buildout.scripts:PyLint',
-        'nose = bob.buildout.scripts:NoseTests',
-        'coverage = bob.buildout.scripts:Coverage',
-        'sphinx = bob.buildout.scripts:Sphinx',
-        'egg.scripts = bob.buildout.scripts:UserScripts',
         ],
       'zc.buildout.extension': [
         'extension = bob.buildout.extension:extension',
@@ -49,8 +40,10 @@ setup(
 
     install_requires=[
       'setuptools',
+      'pip',
       'zc.recipe.egg',
-      'six',
+      'syseggrecipe',
+      'oset',
       ],
 
     classifiers=[
@@ -59,7 +52,7 @@ setup(
       'Environment :: Plugins',
       'Framework :: Buildout :: Recipe',
       'Intended Audience :: Developers',
-      'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+      'License :: OSI Approved :: BSD License',
       'Topic :: Software Development :: Build Tools',
       'Topic :: Software Development :: Libraries :: Python Modules',
       'Natural Language :: English',
