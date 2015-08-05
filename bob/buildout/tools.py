@@ -12,12 +12,22 @@ import site
 import fnmatch
 import pkg_resources
 import distutils
-import zc.buildout
-import zc.buildout.easy_install
-from zc.buildout.buildout import bool_option, MissingOption
 
 import logging
 logger = logging.getLogger(__name__)
+
+import pip
+import oset
+import zc.buildout
+import zc.buildout.easy_install
+from zc.buildout.buildout import bool_option, MissingOption
+import syseggrecipe.recipe
+
+
+# gets a list (from pip), of what is currently available on the system and are
+# not in edition mode
+SYSTEM_EGGS = dict([(k.project_name, k) for k in pip.get_installed_distributions(local_only=False, include_editables=False)])
+
 
 def site_paths(buildout, prefixes):
   """Filters the site paths to make sure we don't get mistaken when filtering
@@ -25,14 +35,15 @@ def site_paths(buildout, prefixes):
   """
 
   def is_buildout_dir(path):
-    return path.startswith(buildout['eggs-directory']) or \
-        path.startswith(buildout['develop-eggs-directory'])
+    return path.startswith(buildout['buildout']['eggs-directory']) or \
+        path.startswith(buildout['buildout']['develop-eggs-directory'])
 
   def is_in_prefixes(path):
     return any([path.startswith(k) for k in prefixes])
 
   retval = [os.path.realpath(k) for k in site.sys.path]
   return [k for k in retval if not (is_buildout_dir(k) or is_in_prefixes(k))]
+
 
 def uniq(seq, idfun=None):
   """Order preserving, fast de-duplication for lists"""
@@ -50,16 +61,19 @@ def uniq(seq, idfun=None):
     result.append(item)
   return result
 
+
 def parse_list(l):
   """Parses a ini-style list from buildout and solves complex nesting"""
 
   if not l: return []
   return uniq([k.strip() for k in l.split() if len(k.strip()) > 0])
 
+
 def add_eggs(eggs, l):
   """Adds eggs from a list into the buildout option"""
 
   return '\n'.join(uniq(eggs + l))
+
 
 def prepend_path(path, paths):
   """Prepends a path to the list of paths making sure it remains unique"""
@@ -67,10 +81,12 @@ def prepend_path(path, paths):
   if path in paths: paths.remove(path)
   paths.insert(0, path)
 
+
 def is_directory(filename):
   """Tells if the file is a directory"""
 
   return os.path.isdir(filename)
+
 
 def directory_readlines(package, filename):
   """Read all lines of a given file in a directory"""
@@ -82,12 +98,14 @@ def directory_readlines(package, filename):
 
   return []
 
+
 def is_zipfile(filename):
   """Tells if the file is a zip file"""
 
   import zipfile
 
   return zipfile.is_zipfile(filename)
+
 
 def zipfile_readlines(package, filename):
   """Read all lines of a given file in a tar ball"""
@@ -108,12 +126,14 @@ def zipfile_readlines(package, filename):
 
   return []
 
+
 def is_tarfile(filename):
   """Tells if the file is a tar ball"""
 
   import tarfile
 
   return tarfile.is_tarfile(filename)
+
 
 def tarfile_readlines(package, filename):
   """Read all lines of a given file in tar ball"""
@@ -134,6 +154,7 @@ def tarfile_readlines(package, filename):
 
   return []
 
+
 def package_readlines(package, filename):
   """Extracts a single file contents from a given package"""
 
@@ -145,6 +166,7 @@ def package_readlines(package, filename):
     return tarfile_readlines(package, filename)
   else:
     raise RuntimeError("package format not recognized: `%s'" % package)
+
 
 def requirement_is_satisfied(requirement, working_set, newest):
   """Checks if the specifications for a requirement are satisfied by the
@@ -159,6 +181,7 @@ def requirement_is_satisfied(requirement, working_set, newest):
     pass
 
   return False
+
 
 def unsatisfied_requirements(buildout, package, working_set):
   """Reads and extracts the unsatisfied requirements from the package
@@ -187,11 +210,13 @@ def unsatisfied_requirements(buildout, package, working_set):
 
   return left_over
 
+
 def merge_working_sets(self, other):
   """Merge two working sets, results are put on the first one"""
 
   for dist in other.by_key.values(): self.add(dist)
   return self
+
 
 def install_package(buildout, specification, working_set):
   """Installs a package on either the eggs directory or development-eggs
@@ -199,10 +224,10 @@ def install_package(buildout, specification, working_set):
 
   new_ws = zc.buildout.easy_install.install(
       specs = [specification],
-      dest = buildout['eggs-directory'],
-      links = buildout.get('find-links', '').split(),
-      index = buildout.get('index', None),
-      path = [buildout['develop-eggs-directory']],
+      dest = buildout['buildout']['eggs-directory'],
+      links = buildout['buildout'].get('find-links', '').split(),
+      index = buildout['buildout'].get('index', None),
+      path = [buildout['buildout']['develop-eggs-directory']],
       working_set = working_set,
       newest = bool_option(buildout, 'newest', 'true'),
       )
@@ -211,13 +236,19 @@ def install_package(buildout, specification, working_set):
 
   return working_set
 
+
 def satisfy_requirements(buildout, package, working_set):
   """Makes sure all requirements from a given package are installed properly
   before we try to install the package itself."""
 
   requirements = unsatisfied_requirements(buildout, package, working_set)
 
-  if not requirements: return
+  # tries to see if we can satisfy with a system package
+  satisfied, retval = link_system_eggs(buildout, requirements)
+
+  requirements = [k for k in requirements if k not in satisfied]
+
+  if not requirements: return retval
 
   # only installs if not on "offline" mode
   if offline(buildout):
@@ -229,6 +260,9 @@ def satisfy_requirements(buildout, package, working_set):
   for req in requirements:
     logger.info("Installing `%s' for package `%s'...", req, package)
     working_set = install_package(buildout, req, working_set)
+
+  return retval
+
 
 def get_pythonpath(working_set, buildout, prefixes):
   """Returns the PYTHONPATH setting for a particular working set"""
@@ -244,11 +278,13 @@ def get_pythonpath(working_set, buildout, prefixes):
   return [k for k in working_set.entries \
       if k not in site_paths(buildout, prefixes)]
 
+
 def get_prefixes(buildout):
   """Returns a list of prefixes set on the buildout section"""
 
-  prefixes = parse_list(buildout.get('prefixes', ''))
+  prefixes = parse_list(buildout['buildout'].get('prefixes', ''))
   return [os.path.abspath(k) for k in prefixes if os.path.exists(k)]
+
 
 def find_site_packages(prefixes):
   """Finds python packages on prefixes"""
@@ -274,16 +310,18 @@ def find_site_packages(prefixes):
 
   return retval
 
+
 def has_distribution(path):
   """Tests if a given path really has installed python distributions"""
 
   ws = pkg_resources.WorkingSet([path])
   return bool(ws.entry_keys[path])
 
+
 def order_egg_dirs(buildout):
   """Orders the egg directories and returns them newest first"""
 
-  eggdir = buildout['eggs-directory']
+  eggdir = buildout['buildout']['eggs-directory']
   eggs = [os.path.join(eggdir, k) for k in os.listdir(eggdir)]
   distros = {}
   for egg in eggs:
@@ -297,6 +335,7 @@ def order_egg_dirs(buildout):
 
   return [k[1] for k in distros.values()]
 
+
 def working_set(buildout):
   """Creates and returns a new working set based on user prefixes and existing
   packages already installed"""
@@ -304,7 +343,7 @@ def working_set(buildout):
   working_set = pkg_resources.WorkingSet([])
 
   # add development directory first
-  dev_dir = buildout['develop-eggs-directory']
+  dev_dir = buildout['buildout']['develop-eggs-directory']
   for path in fnmatch.filter(os.listdir(dev_dir), '*.egg-link'):
     full_path = os.path.join(dev_dir, path)
     python_path = open(full_path, 'rt').read().split('\n')[0]
@@ -325,12 +364,8 @@ def working_set(buildout):
     if has_distribution(path) and path not in working_set.entries:
       working_set.add_entry(path)
 
-  # finally, adds the system path
-  for path in site.sys.path:
-    if has_distribution(path) and path not in working_set.entries:
-      working_set.add_entry(path)
-
   return working_set
+
 
 def filter_working_set_hard(working_set, requirements):
   """Returns a new working set which contains only the paths to the required
@@ -343,6 +378,7 @@ def filter_working_set_hard(working_set, requirements):
     for dist in dists: retval.add(dist)
 
   return retval
+
 
 def filter_working_set_soft(working_set, requirements):
   """Returns a new working set which contains only the paths to the required
@@ -361,21 +397,52 @@ def filter_working_set_soft(working_set, requirements):
 
   return retval, unmet_requirements
 
+
 def newest(buildout):
-  return bool_option(buildout, 'newest', 'true')
+  return bool_option(buildout['buildout'], 'newest', 'true')
+
 
 def offline(buildout):
-  return bool_option(buildout, 'offline', 'false')
+  return bool_option(buildout['buildout'], 'offline', 'false')
+
 
 def debug(buildout):
-  return bool_option(buildout, 'debug', 'false')
+  return bool_option(buildout['buildout'], 'debug', 'false')
+
 
 def verbose(buildout):
-  return bool_option(buildout, 'verbose', 'false')
+  return bool_option(buildout['buildout'], 'verbose', 'false')
+
 
 def prefer_final(buildout):
-  return bool_option(buildout, 'prefer-final', 'true')
+  return bool_option(buildout['buildout'], 'prefer-final', 'true')
+
 
 def eggs(buildout, options, name):
-  retval = options.get('eggs', buildout.get('eggs', ''))
+  retval = options.get('eggs', buildout['buildout'].get('eggs', ''))
   return parse_list(retval)
+
+
+def link_system_eggs(buildout, requirements):
+
+  existing = []
+  installed = ()
+  for r in requirements:
+    req = pkg_resources.Requirement.parse(r)
+    # TODO: Check if requirement is satisfied!
+    if req.project_name in SYSTEM_EGGS:
+      # if there are dependencies, install them as well
+      _ex, _inst = link_system_eggs(buildout,
+              [str(z) for z in SYSTEM_EGGS[req.project_name].requires()])
+      installed += _inst
+      existing.append(req.project_name)
+
+  if not existing:
+    return existing, tuple()
+
+  options = {
+          'eggs': '\n'.join(existing),
+          'force-sysegg': 'true',
+          }
+  recipe = syseggrecipe.recipe.Recipe(buildout, 'syseggrecipe', options)
+  return existing, installed + tuple(recipe.install())
