@@ -17,29 +17,32 @@
 .. image:: http://img.shields.io/pypi/dm/bob.buildout.png
    :target: https://pypi.python.org/pypi/bob.buildout
 
-===================================
- Buildout Recipes for Bob Packages
-===================================
+============================================
+ Buildout Extension/Recipe for Bob Packages
+============================================
 
-This package contains a number of recipes to be used to build `Satellite
-Packages <http://www.idiap.ch/software/bob/docs/releases/last/sphinx/html/OrganizeYourCode.html>`_ for `Bob <http://idiap.github.com/bob/>`_,
-a signal-processing and machine learning toolbox originally developed by the
-Biometrics Group at Idiap, in Switzerland.
+This package contains a recipe to be used to build `Packages <http://www.idiap.ch/software/bob/docs/releases/last/sphinx/html/OrganizeYourCode.html>`_
+for `Bob <http://idiap.github.com/bob/>`_, a signal-processing and machine
+learning toolbox originally developed by the Biometrics Group at Idiap, in
+Switzerland.
 
 .. note::
 
   You normally don't need to download this package directly. It will be done by
-  ``zc.buildout`` automatically, if you followed our recipe to build `Satellite
-  Packages`_.
+  ``zc.buildout`` automatically, if you followed our recipe to build
+  `Packages`_.
 
-C++/Python Extension
---------------------
 
-This extension allows you to compile C/C++ extensions that depend on each other
-using a buildout. It assures that eggs living in both ``develop-eggs`` and
-``eggs`` are on your path before building the packages in the ``develop``
-section. By using this extension you can drop the use of the local recipe
-``bob.buildout:develop``, which should be considered deprecated.
+Extension
+---------
+
+This extension allows you to compile extensions that depend on each other using
+a buildout. It assures that eggs living in both ``develop-eggs`` and ``eggs``
+are on your path before building the packages in the ``develop`` section. By
+using this extension you can drop the use of the local recipe
+``bob.buildout:develop``, which should be considered deprecated. The extension
+``bob.buildout`` should appear **before** any other extension in your buildout,
+as it overrides the default behaviour for installing packages.
 
 Supported Options
 =================
@@ -91,6 +94,7 @@ environ
   ``environ``'s ``BOB_PREFIX_PATH`` and ``PKG_CONFIG_PATH`` are **prepended**
   to those listed in ``prefixes``, if that is also set.
 
+
 Multi-Script Installer
 ----------------------
 
@@ -108,9 +112,15 @@ called ``eggs``, but that can be overriden locally. It generates these scripts:
 python
   A pre-configured python interpreter
 
+ipython
+  A pre-configured IPython interpreter, if the package ``ipython`` is available
+  on your system or included on your ``eggs`` entry.
+
 gdb-python
   A pre-configured python interpreter, prefixed with ``gdb`` to make debugging
-  easier. Use it like you use ``python``.
+  easier. Use it like you use ``python``. This script in only installed if the
+  flag ``debug`` on the buildout section of your ``buildout.cfg`` file is set
+  to ``true``.
 
 nosetests
   A test runner called ``nosetests`` will be created on the bin directory of
@@ -132,10 +142,11 @@ To use this recipe, you just have to simply do::
   [scripts]
   recipe = bob.buildout:scripts
 
+
 Common Supported Options
 ========================
 
-The recipe supports the following options:
+The recipe supports all options in ``zc.egg.recipe``, plus the following:
 
 prefixes
   A list of directories where this recipe will look for subdirectories with
@@ -144,71 +155,50 @@ prefixes
   property defaults to ``buildout.prefixes``. Both can be empty, which makes
   this recipe default to using standard available paths.
 
-eggs
-  The eggs option specifies a list of eggs to use for **building** this
-  package. Each string must be given on a separate line. If not given, the
-  value of this property defaults to ``buildout.eggs``.
-
-dependent-scripts
-  If set to the string ``true``, scripts will be generated for all required
-  eggs in addition to the eggs specifically named.
-
-interpreter
-  The name of a script to generate that allows access to a Python interpreter
-  that has the path set based on the eggs installed. If you don't specify
-  anything, the default value ``python`` will be used.
-
 extra-paths
   Extra paths to be appended in a generated script. To prepend, using the
   ``prefixes`` entry.
 
-nose-flags
-  These are extra flags that are **appended** to the given ``nosetests``
-  command line, automatically. Use this to preset arguments you like running
-  all the time like ``-v``, for example.
 
-Other Recipes
--------------
+Development
+-----------
 
-This package also provides recipes that allow for the discrete installation of
-interpreters and support programs, lumped together with the ``scripts`` recipe
-described above. You can use some of the options described above with these
-recipes. For example, the ``prefixes``, ``eggs`` and ``extra-paths`` are
-considered by all these recipes.
+In order to develop this package using a buildout of another package, first
+checkout or link this package into the target package's ``src`` directory. For
+example::
 
-.. note::
+  $ cd mypackage
+  $ mkdir src
+  $ cd src
+  $ git clone https://github.com/bioidiap/bob.buildout
 
-  Use of these individual recipes should be done with care. The ``scripts``
-  recipe should be used by default, unless you have a special requirement that
-  is not covered by that recipe.
+Then, create a buildout configuration file called ``first.cfg``, that will hook
+your checkout as a development egg. Here is an example::
 
-python
-  This recipe generates **just** a python interpreter on the binary directory.
-  Extra options considered: ``interpreter``.
+  $ cat first.cfg
+  [buildout]
+  parts =
+  develop = src/bob.buildout
 
-ipython
-  This recipe generates an IPython interpreter on the binary directory.
-  Extra options considered: ``interpreter``.
+Use ``first.cfg`` to start your buildout::
 
-gdb-python
-  This recipe generates a gdb launcher using the python interpreter so you can
-  start your scripts directly typing ``gdb-python myscript.py``.
+  $ python bootstrap-buildout.py
+  $ ./bin/buildout -c first.cfg
 
-pylint
-  No extra options for this recipe.
+Then, make sure ``src/bob.buildout`` is part of your package's ``buildout.cfg``
+``develop`` entries::
 
-nose
-  This recipe generates only the ``nosetests`` program. Extra options
-  considered are:``nose-flags``.
+  $ cat buildout.cfg
+  [buildout]
+  parts = scripts
+  extensions = bob.buildout
+  eggs = my.package
+  develop = src/bob.buildout
+            .
 
-coverage
-  This recipe generates only the ``coverage`` program. Extra options
-  considered are:``coverage-flags``.
+  [scripts]
+  recipe = bob.buildout:scripts
 
-sphinx
-  This recipe generates only the Sphinx documentation generator applications.
-  Extra options considered: none.
+Use it normally::
 
-egg.scripts
-  This recipe generates only the scripts (and dependent scripts) for the
-  package. Extra options considered: ``dependent-scripts``.
+  $ ./bin/buildout
