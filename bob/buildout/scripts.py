@@ -13,7 +13,6 @@ import pip
 import oset
 import distutils
 import zc.recipe.egg
-import syseggrecipe.recipe
 
 from . import tools
 from .envwrapper import EnvironmentWrapper
@@ -33,13 +32,13 @@ class Recipe(object):
     self.logger = logging.getLogger(name.capitalize())
 
     # Are we in debug mode?
-    self.debug = tools.debug(buildout['buildout'])
+    self.debug = tools.debug(buildout)
 
     # Gets a personalized eggs list or the one from buildout
-    self.eggs = oset.oset(tools.eggs(buildout['buildout'], options, name))
+    self.eggs = oset.oset(tools.eggs(buildout, options, name))
 
     # Gets a personalized prefixes list or the one from buildout
-    prefixes = tools.get_prefixes(buildout['buildout'])
+    prefixes = tools.get_prefixes(buildout)
 
     # Builds an environment wrapper, if dependent packages need to be compiled
     self.envwrapper = EnvironmentWrapper(self.logger, self.debug, prefixes)
@@ -53,25 +52,7 @@ class Recipe(object):
 
   def install(self):
 
-    # gets a list (from pip), of what is currently available on the system
-    # and are not in edition mode
-    system_eggs = oset.oset(pip.get_installed_distributions(
-        include_editables=False))
-
-    # excludes packages which are currently installed on this buildout
-    bdir = self.buildout['buildout']['directory']
-    local_eggs = oset.oset([k for k in system_eggs if \
-            k.location.startswith(bdir)])
-    system_eggs -= local_eggs
-
-    # installs system eggs using syseggrecipe
-    options = {
-            'eggs': '\n'.join([k.key for k in system_eggs]),
-            'force-sysegg': 'true',
-            }
-    name = self.name + '-system-eggs'
-    recipe = syseggrecipe.recipe.Recipe(self.buildout, name, options)
-    retval = recipe.install()
+    retval = tuple()
 
     # this will effectively build our eggs for the current buildout
     with self.envwrapper as ew:
@@ -80,9 +61,10 @@ class Recipe(object):
       options = self.options.copy()
       eggs = copy.deepcopy(self.eggs)
       # boost environment with more executables we always use
-      eggs.add('sphinx')
-      eggs.add('nose')
-      eggs.add('coverage')
+      extras = ['Sphinx', 'nose', 'coverage']
+      satisfied, linked = tools.link_system_eggs(self.buildout, extras)
+      retval += linked
+      for k in extras: eggs.add(k)
       options['eggs'] = '\n'.join(eggs)
       egg_recipe = zc.recipe.egg.Scripts(self.buildout, name, options)
       retval += tuple(egg_recipe.install())
@@ -104,13 +86,16 @@ class Recipe(object):
       retval += tuple(gdbpy_recipe.install())
 
     # if ipython is available as a system package, install an interpreter
-    all_eggs = pip.get_installed_distributions()
+    all_eggs = pip.get_installed_distributions(local_only=False)
     ipython_egg = [k for k in all_eggs if k.key == 'ipython']
     if ipython_egg:
 
       options = self.options.copy()
       eggs = copy.deepcopy(self.eggs)
-      eggs.add('ipython')
+      extras = ['ipython']
+      satisfied, linked = tools.link_system_eggs(self.buildout, extras)
+      retval += linked
+      for k in extras: eggs.add(k)
       options['eggs'] = '\n'.join(eggs)
       if 'interpreter' in options:
         options['scripts'] = 'i' + options['interpreter']
@@ -120,9 +105,9 @@ class Recipe(object):
       options['dependent-scripts'] = 'false'
 
       ipython_version = distutils.version.LooseVersion(ipython_egg[0].version)
-      if ipython_version > distutils.version.LooseVersion('3.0.0a0'):
+      if ipython_version > distutils.version.LooseVersion('2.0.0a0'):
         ipython_app = 'IPython.terminal.ipapp:launch_new_instance'
-      else: #version 2 or less
+      else: #version 1 or less
         ipython_app = 'IPython.frontend.terminal.ipapp:launch_new_instance'
 
       options['entry-points'] = '%s=%s' % (options['scripts'], ipython_app)
