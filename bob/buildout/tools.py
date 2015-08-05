@@ -26,7 +26,7 @@ import syseggrecipe.recipe
 
 # gets a list (from pip), of what is currently available on the system and are
 # not in edition mode
-SYSTEM_EGGS = dict([(k.project_name, k) for k in pip.get_installed_distributions(local_only=False, include_editables=False)])
+SYSTEM_EGGS = dict([(k.key, k) for k in pip.get_installed_distributions(local_only=False, include_editables=False)])
 
 
 def site_paths(buildout, prefixes):
@@ -425,24 +425,30 @@ def eggs(buildout, options, name):
 
 def link_system_eggs(buildout, requirements):
 
-  existing = []
-  installed = ()
-  for r in requirements:
-    req = pkg_resources.Requirement.parse(r)
-    # TODO: Check if requirement is satisfied!
-    if req.project_name in SYSTEM_EGGS:
-      # if there are dependencies, install them as well
-      _ex, _inst = link_system_eggs(buildout,
-              [str(z) for z in SYSTEM_EGGS[req.project_name].requires()])
-      installed += _inst
-      existing.append(req.project_name)
+  def _recurse_dependencies(requirement, existing, current):
+    '''Recurses until all dependencies are extracted'''
 
-  if not existing:
-    return existing, tuple()
+    _req = pkg_resources.Requirement.parse(requirement)
+
+    # TODO: Check if requirement is satisfied!
+    if _req.key in SYSTEM_EGGS:
+      current.add(_req.key)
+      existing.append(requirement)
+      for k in [r for r in SYSTEM_EGGS[_req.key].requires() \
+              if r.key not in current]:
+        _recurse_dependencies(k.key, existing, current)
+
+    return current
+
+  existing = []
+  to_install = oset.oset()
+  for r in requirements: _recurse_dependencies(r, existing, to_install)
+
+  if not to_install: return [], ()
 
   options = {
-          'eggs': '\n'.join(existing),
+          'eggs': '\n'.join(to_install),
           'force-sysegg': 'true',
           }
   recipe = syseggrecipe.recipe.Recipe(buildout, 'syseggrecipe', options)
-  return existing, installed + tuple(recipe.install())
+  return existing, tuple(recipe.install())
