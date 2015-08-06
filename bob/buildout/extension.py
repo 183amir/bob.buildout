@@ -9,6 +9,8 @@ import subprocess
 import pkg_resources
 import zc.buildout.easy_install
 
+import oset
+
 from . import tools
 from .envwrapper import EnvironmentWrapper
 
@@ -30,6 +32,11 @@ sys.argv[0] = %(setup)r
 
 exec(compile(open(%(setup)r).read(), %(setup)r, 'exec'))
 """
+
+# We keep a global list of developed eggs so they can be added to the eggs
+# entry as well - as this is not done automatically by most recipes
+DEV_EGGS = []
+
 
 class Installer:
 
@@ -144,6 +151,7 @@ class Installer:
         shutil.rmtree(tmp)
         self.envwrapper.unset()
 
+
 class Extension:
 
   def __init__(self, buildout):
@@ -211,7 +219,12 @@ class Extension:
 
           zc.buildout.easy_install.call_subprocess(args)
 
-          return system_eggs + tuple(zc.buildout.easy_install._copyeggs(tmp3, dest, '.egg-link', undo))
+          retval = zc.buildout.easy_install._copyeggs(tmp3, dest, '.egg-link', undo)
+
+          global DEV_EGGS
+          DEV_EGGS.append(os.path.splitext(os.path.basename(retval))[0])
+
+          return system_eggs + tuple(retval,)
 
       finally:
           undo.reverse()

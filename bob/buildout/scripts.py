@@ -7,7 +7,6 @@
 """
 
 import logging
-import copy
 
 import pip
 import oset
@@ -17,6 +16,7 @@ import zc.recipe.egg
 from . import tools
 from .envwrapper import EnvironmentWrapper
 from .python import Recipe as PythonRecipe
+from .extension import DEV_EGGS
 
 
 class Recipe(object):
@@ -59,19 +59,19 @@ class Recipe(object):
 
       name = self.name + '-user-scripts'
       options = self.options.copy()
-      eggs = copy.deepcopy(self.eggs)
+      eggs = list(self.eggs)
       # boost environment with more executables we always use
       extras = ['Sphinx', 'nose', 'coverage']
       satisfied, linked = tools.link_system_eggs(self.buildout, extras)
       retval += linked
-      for k in extras: eggs.add(k)
-      options['eggs'] = '\n'.join(eggs)
+      eggs += extras
+      options['eggs'] = '\n'.join(oset.oset(DEV_EGGS + eggs + extras))
       egg_recipe = zc.recipe.egg.Scripts(self.buildout, name, options)
       retval += tuple(egg_recipe.install())
 
-    # installs python interpreter
+    # installs a python interpreter
     options = self.options.copy()
-    options['eggs'] = '\n'.join(self.eggs)
+    options['eggs'] = '\n'.join(oset.oset(DEV_EGGS + list(self.eggs)))
     name = self.name + '-python'
     python_recipe = PythonRecipe(self.buildout, name, options)
     retval += tuple(python_recipe.install())
@@ -80,7 +80,7 @@ class Recipe(object):
     if self.debug:
       from .gdbpy import Recipe as GdbPythonRecipe
       options = self.options.copy()
-      options['eggs'] = '\n'.join(self.eggs)
+      options['eggs'] = '\n'.join(oset.oset(DEV_EGGS + list(self.eggs)))
       name = self.name + '-gdb-python'
       gdbpy_recipe = GdbPythonRecipe(self.buildout, name, options)
       retval += tuple(gdbpy_recipe.install())
@@ -91,12 +91,11 @@ class Recipe(object):
     if ipython_egg:
 
       options = self.options.copy()
-      eggs = copy.deepcopy(self.eggs)
+      eggs = list(self.eggs)
       extras = ['ipython']
       satisfied, linked = tools.link_system_eggs(self.buildout, extras)
       retval += linked
-      for k in extras: eggs.add(k)
-      options['eggs'] = '\n'.join(eggs)
+      options['eggs'] = '\n'.join(oset.oset(DEV_EGGS + eggs + extras))
       if 'interpreter' in options:
         options['scripts'] = 'i' + options['interpreter']
         del options['interpreter']
